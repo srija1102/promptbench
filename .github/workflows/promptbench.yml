@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main, master]
 
+# Opt into Node.js 24 to silence the Node 20 deprecation warnings
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # Cancel in-flight runs for the same branch when a new commit is pushed
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -46,6 +50,10 @@ jobs:
   # Job 2: Save baseline — runs only on push to main.
   # Calls the real LLM and caches the SQLite baseline
   # so regression tests on PRs can use it.
+  #
+  # NOTE: baseline mode does not run evaluators, so the
+  # HuggingFace model is NOT downloaded here. It is
+  # cached in the regression-tests job instead.
   # ─────────────────────────────────────────────
   save-baseline:
     name: Save Baseline
@@ -68,12 +76,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
-      - name: Cache HuggingFace model (sentence-transformers)
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/huggingface
-          key: hf-model-all-MiniLM-L6-v2
-
       - name: Save baselines for all example suites
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -92,6 +94,9 @@ jobs:
   # Job 3: Regression tests — runs only on PRs.
   # Restores the baseline saved on main, then tests
   # whether the PR's prompts still behave correctly.
+  # The HuggingFace model is cached here because
+  # `promptbench test` is the first command that
+  # downloads it (semantic evaluator).
   # ─────────────────────────────────────────────
   regression-tests:
     name: Prompt Regression Tests
@@ -114,12 +119,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
-      - name: Restore HuggingFace model cache
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/.cache/huggingface
-          key: hf-model-all-MiniLM-L6-v2
-
       - name: Restore baseline database
         id: restore-baseline
         uses: actions/cache/restore@v4
@@ -136,6 +135,13 @@ jobs:
           echo "::error::No baseline found. Push to main first to generate one."
           exit 1
 
+      - name: Restore HuggingFace model cache
+        id: hf-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-model-all-MiniLM-L6-v2
+
       - name: Run prompt regression tests
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -143,6 +149,13 @@ jobs:
           promptbench test --suite examples/summarizer.yaml
           promptbench test --suite examples/classifier.yaml
           promptbench test --suite examples/chatbot.yaml
+
+      - name: Cache HuggingFace model for future runs
+        if: steps.hf-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-model-all-MiniLM-L6-v2
 
       - name: Generate HTML failure report
         if: failure()
