@@ -1,0 +1,71 @@
+# classifier.yaml
+# Tests for a sentiment classification prompt.
+# Covers JSON output format, label accuracy, and forbidden patterns.
+
+name: sentiment-classifier
+model: llama-3.1-8b-instant
+api_provider: groq
+
+prompt: |
+  You are a sentiment analysis model. Classify the sentiment of the given text
+  as one of: positive, negative, or neutral.
+
+  Respond ONLY with a JSON object in this exact format:
+  {"sentiment": "<positive|negative|neutral>", "confidence": <0.0-1.0>}
+
+  Do not include any explanation or additional text.
+
+tests:
+  - name: positive-review
+    input: |
+      Classify the sentiment of this text:
+      "This product exceeded all my expectations! The quality is outstanding
+      and the customer service was incredibly helpful. I will definitely
+      buy from this company again."
+    expect:
+      format: json
+      required_patterns:
+        - '"sentiment"\s*:\s*"positive"'
+      forbidden_patterns:
+        - '"sentiment"\s*:\s*"negative"'
+        - '"sentiment"\s*:\s*"neutral"'
+
+  - name: negative-review
+    input: |
+      Classify the sentiment of this text:
+      "Terrible experience. The product broke after two days, the return
+      process was a nightmare, and customer support was completely
+      unresponsive. Total waste of money."
+    expect:
+      format: json
+      required_patterns:
+        - '"sentiment"\s*:\s*"negative"'
+      forbidden_patterns:
+        - '"sentiment"\s*:\s*"positive"'
+
+  - name: neutral-statement
+    input: |
+      Classify the sentiment of this text:
+      "The package arrived on Tuesday. It contains three items: a red pen,
+      a notebook, and a USB cable. The box dimensions are 20cm by 15cm."
+    expect:
+      format: json
+      required_patterns:
+        - '"sentiment"\s*:\s*"neutral"'
+      max_words: 30
+
+  - name: no-refusals-in-classifier
+    input: |
+      Classify the sentiment of this text:
+      "I'm not sure how I feel about this. There were some good parts
+      and some bad parts. Overall, it was just okay."
+    expect:
+      format: json
+      forbidden_phrases:
+        - "I cannot"
+        - "I'm unable"
+        - "As an AI"
+        - "I don't have the ability"
+      required_patterns:
+        - '"sentiment"'
+        - '"confidence"'

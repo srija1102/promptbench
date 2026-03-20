@@ -1,0 +1,88 @@
+# summarizer.yaml
+# Tests for an article summarization prompt.
+# Covers format, length, content, forbidden phrases, and semantic threshold.
+
+name: article-summarizer
+model: llama-3.1-8b-instant
+api_provider: groq
+
+prompt: |
+  You are a professional content summarizer. When given an article or passage,
+  produce a concise, accurate summary using bullet points. Focus on key facts,
+  avoid filler phrases, and write in a professional tone.
+
+tests:
+  - name: basic-format-check
+    input: |
+      Summarize the following article in bullet points:
+
+      Artificial intelligence is rapidly transforming industries worldwide.
+      Companies are investing billions in AI research. Healthcare uses AI for
+      diagnosis. Finance uses AI for fraud detection. Transportation is being
+      revolutionized by self-driving technology. Experts predict AI will
+      automate 30% of current jobs by 2030.
+    expect:
+      format: bullet_points
+      min_bullets: 3
+      max_bullets: 8
+      tone: professional
+
+  - name: length-constraint
+    input: |
+      Summarize this in 2-3 bullet points, under 60 words total:
+
+      Climate change poses significant risks to global food security.
+      Rising temperatures reduce crop yields. Extreme weather events
+      destroy harvests. Sea level rise threatens coastal farmland.
+      Scientists urge immediate action to reduce carbon emissions.
+    expect:
+      format: bullet_points
+      max_words: 80
+      min_words: 15
+      max_bullets: 4
+
+  - name: required-content
+    input: |
+      Summarize the following, making sure to mention "machine learning" and
+      "data privacy" in your summary:
+
+      The tech industry faces dual pressures: advancing machine learning
+      capabilities while respecting data privacy regulations. GDPR in Europe
+      and CCPA in California impose strict rules on data collection.
+      Companies must balance innovation with compliance.
+    expect:
+      required_phrases:
+        - "machine learning"
+        - "data privacy"
+      max_words: 100
+
+  - name: forbidden-phrases
+    input: |
+      Summarize this article professionally. Do NOT use phrases like
+      "I think" or "maybe" or "As an AI":
+
+      Quantum computing represents the next frontier in computational power.
+      Unlike classical computers that use bits, quantum computers use qubits
+      that can exist in multiple states simultaneously. This enables solving
+      problems in seconds that would take classical computers millennia.
+    expect:
+      forbidden_phrases:
+        - "I think"
+        - "maybe"
+        - "as an ai"
+        - "I cannot"
+      tone: professional
+      format: bullet_points
+
+  - name: semantic-stability
+    input: |
+      Summarize the key points of this passage:
+
+      Open source software powers the majority of the internet's infrastructure.
+      Linux runs on over 90% of public cloud servers. The Apache and Nginx web
+      servers host billions of websites. Major corporations like Google, Microsoft,
+      and Meta contribute billions of dollars and engineering hours to open source.
+    expect:
+      semantic_threshold: 0.72
+      max_words: 120
+      format: bullet_points

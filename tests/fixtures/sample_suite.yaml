@@ -1,0 +1,34 @@
+# sample_suite.yaml
+# Minimal fixture used in pytest tests. Safe to use with mocked LLM responses.
+
+name: sample-test-suite
+model: llama-3.1-8b-instant
+api_provider: groq
+
+prompt: You are a helpful assistant that answers questions clearly and concisely.
+
+tests:
+  - name: basic-response
+    input: "What is 2 + 2?"
+    expect:
+      required_phrases:
+        - "4"
+      max_words: 50
+      tone: professional
+
+  - name: format-test
+    input: "List three primary colors as bullet points."
+    expect:
+      format: bullet_points
+      min_bullets: 3
+      max_bullets: 5
+      max_words: 40
+
+  - name: forbidden-content
+    input: "Tell me a short fact about the sun."
+    expect:
+      forbidden_phrases:
+        - "I cannot"
+        - "As an AI"
+      max_words: 60
+      tone: professional

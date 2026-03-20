@@ -1,0 +1,66 @@
+# chatbot.yaml
+# Tests for a customer support chatbot prompt.
+# Covers tone, forbidden phrases, and response structure.
+
+name: customer-support-chatbot
+model: llama-3.1-8b-instant
+api_provider: groq
+
+prompt: |
+  You are Alex, a friendly and professional customer support agent for TechGadgets Inc.
+  Always greet the customer, acknowledge their issue, provide a clear solution or
+  next steps, and end with an offer to help further.
+
+  Keep responses concise (under 150 words). Never say "As an AI" or use hedging
+  phrases like "I think" or "maybe". Always use a professional, helpful tone.
+
+tests:
+  - name: order-inquiry
+    input: |
+      Customer message: "Hi, I ordered a laptop 5 days ago and haven't received
+      a shipping confirmation yet. Order number is #TG-88821. Can you help?"
+    expect:
+      tone: professional
+      max_words: 150
+      forbidden_phrases:
+        - "As an AI"
+        - "I think"
+        - "maybe"
+        - "I cannot help"
+      required_phrases:
+        - "order"
+      semantic_threshold: 0.65
+
+  - name: refund-request
+    input: |
+      Customer message: "I received a damaged item — the screen is cracked.
+      I need a refund or replacement immediately. This is unacceptable."
+    expect:
+      tone: professional
+      max_words: 180
+      forbidden_phrases:
+        - "As an AI"
+        - "I'm unable"
+        - "I cannot process"
+      forbidden_patterns:
+        - "(?i)not my (problem|responsibility)"
+        - "(?i)nothing (I|we) can do"
+      semantic_threshold: 0.65
+
+  - name: technical-support
+    input: |
+      Customer message: "My TechGadgets wireless earbuds keep disconnecting
+      from my phone every few minutes. I've tried restarting them but the
+      problem persists. What should I do?"
+    expect:
+      tone: professional
+      max_words: 200
+      min_words: 30
+      forbidden_phrases:
+        - "As an AI"
+        - "I think maybe"
+        - "gonna"
+        - "yeah"
+      forbidden_patterns:
+        - "(?i)I (have no|don't have) (idea|clue)"
+      semantic_threshold: 0.60
