@@ -122,7 +122,6 @@ jobs:
           pip install -e .
 
       - name: Restore baseline database
-        id: restore-baseline
         uses: actions/cache/restore@v4
         with:
           path: ~/.promptbench/db.sqlite
@@ -132,10 +131,12 @@ jobs:
             promptbench-baseline-${{ runner.os }}-
 
       - name: Fail early if no baseline exists
-        if: steps.restore-baseline.outputs.cache-hit != 'true'
         run: |
-          echo "::error::No baseline found. Push to main first to generate one."
-          exit 1
+          if [ ! -f "$HOME/.promptbench/db.sqlite" ]; then
+            echo "::error::No baseline found. Push to main first to generate one."
+            exit 1
+          fi
+          echo "Baseline restored successfully ($(du -h $HOME/.promptbench/db.sqlite | cut -f1))"
 
       - name: Restore HuggingFace model cache
         id: hf-cache
