@@ -4,9 +4,11 @@ storage.py — SQLite-backed persistence for baselines and test run history.
 Database location: ~/.promptbench/db.sqlite
 
 Schema:
-  baselines  — stores the golden output for each test in each suite
-  runs       — one row per promptbench test run (aggregate stats)
-  results    — one row per individual test result within a run
+  baselines        — stores the golden output for each test in each suite
+  runs             — one row per promptbench test run (aggregate stats)
+  results          — one row per individual test result within a run
+  production_logs  — raw prompt/response pairs from production
+  drift_metrics    — computed drift measurements per suite/test
 """
 
 from __future__ import annotations
@@ -151,6 +153,29 @@ class Storage:
                     failure_reason TEXT,
                     duration_ms    INTEGER NOT NULL DEFAULT 0,
                     FOREIGN KEY(run_id) REFERENCES runs(run_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS production_logs (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    suite_name  TEXT    NOT NULL,
+                    test_name   TEXT    NOT NULL,
+                    prompt      TEXT    NOT NULL,
+                    response    TEXT    NOT NULL,
+                    model       TEXT    NOT NULL,
+                    timestamp   REAL    NOT NULL,
+                    metadata    TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS drift_metrics (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    suite_name  TEXT    NOT NULL,
+                    test_name   TEXT    NOT NULL,
+                    drift_type  TEXT    NOT NULL,
+                    drift_score REAL    NOT NULL,
+                    threshold   REAL    NOT NULL,
+                    exceeded    INTEGER NOT NULL,
+                    details     TEXT,
+                    timestamp   REAL    NOT NULL
                 );
             """)
 
@@ -358,6 +383,126 @@ class Storage:
             )
             for r in rows
         ]
+
+    # ------------------------------------------------------------------
+    # Production log operations
+    # ------------------------------------------------------------------
+
+    def save_production_log(self, log) -> None:
+        """
+        Persist a production prompt/response pair.
+
+        Args:
+            log: ProductionLog instance (from monitoring.ingest).
+        """
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO production_logs
+                    (suite_name, test_name, prompt, response, model, timestamp, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    log.suite_name,
+                    log.test_name,
+                    log.prompt,
+                    log.response,
+                    log.model,
+                    log.timestamp,
+                    log.metadata,
+                ),
+            )
+
+    def get_production_logs(
+        self, suite_name: str, test_name: str, limit: int = 100
+    ):
+        """
+        Return recent production logs for a suite/test, newest first.
+
+        Args:
+            suite_name: Suite to query.
+            test_name:  Test to query.
+            limit:      Maximum rows to return.
+
+        Returns:
+            List of ProductionLog instances.
+        """
+        from promptbench.monitoring.ingest import ProductionLog
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM production_logs
+                WHERE suite_name=? AND test_name=?
+                ORDER BY timestamp DESC
+                LIMIT ?
+                """,
+                (suite_name, test_name, limit),
+            ).fetchall()
+
+        return [
+            ProductionLog(
+                suite_name=r["suite_name"],
+                test_name=r["test_name"],
+                prompt=r["prompt"],
+                response=r["response"],
+                model=r["model"],
+                timestamp=r["timestamp"],
+                metadata=r["metadata"],
+            )
+            for r in rows
+        ]
+
+    # ------------------------------------------------------------------
+    # Drift metric operations
+    # ------------------------------------------------------------------
+
+    def save_drift_metric(self, metric) -> None:
+        """
+        Persist a computed drift metric.
+
+        Args:
+            metric: DriftMetric instance (from monitoring.drift).
+        """
+        import time as _time
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO drift_metrics
+                    (suite_name, test_name, drift_type, drift_score,
+                     threshold, exceeded, details, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    metric.suite_name,
+                    metric.test_name,
+                    metric.drift_type,
+                    metric.drift_score,
+                    metric.threshold,
+                    int(metric.exceeded),
+                    metric.details,
+                    _time.time(),
+                ),
+            )
+
+    def get_drift_metrics(self, suite_name: str, limit: int = 100):
+        """
+        Return recent drift metrics for *suite_name*, newest first.
+
+        Returns:
+            List of raw row dicts.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM drift_metrics
+                WHERE suite_name=?
+                ORDER BY timestamp DESC
+                LIMIT ?
+                """,
+                (suite_name, limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def list_suites(self) -> List[str]:
         """Return the names of all suites that have stored baselines or runs."""

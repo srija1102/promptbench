@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PromptBench Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d0d0d;
+      --surface: #161616;
+      --border: #2a2a2a;
+      --text: #e4e4e4;
+      --muted: #888;
+      --green: #4ade80;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --blue: #60a5fa;
+      --purple: #a78bfa;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    /* ─── Layout ─── */
+    .app { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: 220px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 20px 16px;
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .sidebar .logo {
+      font-size: 1.1rem; font-weight: 700;
+      color: var(--blue);
+      margin-bottom: 24px;
+    }
+    .sidebar .logo span { color: var(--muted); font-weight: 400; }
+    .nav-item {
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 0.875rem;
+      transition: background 0.15s, color 0.15s;
+      user-select: none;
+    }
+    .nav-item:hover { background: #222; color: var(--text); }
+    .nav-item.active { background: #1e2a3a; color: var(--blue); font-weight: 600; }
+    .main { margin-left: 220px; padding: 32px; flex: 1; }
+    /* ─── Header ─── */
+    .page-header { margin-bottom: 28px; }
+    .page-header h1 { font-size: 1.4rem; font-weight: 700; }
+    .page-header p { color: var(--muted); font-size: 0.875rem; margin-top: 4px; }
+    /* ─── Stat cards ─── */
+    .stat-grid { display: flex; gap: 16px; margin-bottom: 32px; flex-wrap: wrap; }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      min-width: 160px;
+    }
+    .stat-card .number { font-size: 2rem; font-weight: 700; line-height: 1; }
+    .stat-card .label { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 6px; }
+    .green { color: var(--green); }
+    .red { color: var(--red); }
+    .yellow { color: var(--yellow); }
+    .blue { color: var(--blue); }
+    /* ─── Tables ─── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 28px;
+    }
+    .card-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 0.9rem;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      text-align: left;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+    td { padding: 11px 16px; border-bottom: 1px solid #1f1f1f; vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #1a1a1a; }
+    /* ─── Badges ─── */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge-pass { background: #14532d; color: var(--green); }
+    .badge-fail { background: #450a0a; color: var(--red); }
+    .badge-drift { background: #3b2c00; color: var(--yellow); }
+    .badge-ok { background: #14532d; color: var(--green); }
+    /* ─── Loading / empty ─── */
+    .loading { color: var(--muted); padding: 32px 20px; text-align: center; }
+    .empty { color: var(--muted); padding: 32px 20px; text-align: center; font-size: 0.875rem; }
+    /* ─── Tab nav ─── */
+    .view { display: none; }
+    .view.active { display: block; }
+    /* ─── Refresh btn ─── */
+    .refresh-btn {
+      margin-left: auto;
+      background: #222;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 5px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: background 0.15s;
+    }
+    .refresh-btn:hover { background: #333; }
+    /* ─── Drift bar ─── */
+    .drift-bar-wrap { width: 120px; background: #1f1f1f; border-radius: 3px; height: 6px; display: inline-block; vertical-align: middle; }
+    .drift-bar { height: 6px; border-radius: 3px; }
+    .drift-bar.exceeded { background: var(--red); }
+    .drift-bar.ok { background: var(--green); }
+  </style>
+</head>
+<body>
+<div class="app">
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="logo">Prompt<span>Bench</span></div>
+    <div class="nav-item active" onclick="showView('overview')">📊 Overview</div>
+    <div class="nav-item" onclick="showView('runs')">🏃 Runs</div>
+    <div class="nav-item" onclick="showView('failures')">❌ Failures</div>
+    <div class="nav-item" onclick="showView('drift')">📡 Drift</div>
+  </nav>
+
+  <!-- Main -->
+  <main class="main">
+
+    <!-- OVERVIEW -->
+    <div id="view-overview" class="view active">
+      <div class="page-header">
+        <h1>Overview</h1>
+        <p>Aggregate metrics across all test suites.</p>
+      </div>
+      <div id="stat-grid" class="stat-grid">
+        <div class="loading">Loading metrics…</div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          Suite Health
+          <button class="refresh-btn" onclick="loadMetrics()">↻ Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Suite</th>
+                <th>Runs</th>
+                <th>Pass Rate</th>
+                <th>Last Status</th>
+                <th>Last Run</th>
+              </tr>
+            </thead>
+            <tbody id="metrics-table-body">
+              <tr><td colspan="5" class="loading">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- RUNS -->
+    <div id="view-runs" class="view">
+      <div class="page-header">
+        <h1>Recent Runs</h1>
+        <p>Latest test suite executions.</p>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          All Runs
+          <button class="refresh-btn" onclick="loadRuns()">↻ Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Suite</th>
+                <th>Run ID</th>
+                <th>Passed</th>
+                <th>Failed</th>
+                <th>Pass Rate</th>
+                <th>Duration</th>
+                <th>When</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="runs-table-body">
+              <tr><td colspan="8" class="loading">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- FAILURES -->
+    <div id="view-failures" class="view">
+      <div class="page-header">
+        <h1>Failures</h1>
+        <p>Recent failing test results with reasons.</p>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          Recent Failures
+          <button class="refresh-btn" onclick="loadFailures()">↻ Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Suite</th>
+                <th>Test</th>
+                <th>Failure Reason</th>
+                <th>Duration</th>
+                <th>When</th>
+              </tr>
+            </thead>
+            <tbody id="failures-table-body">
+              <tr><td colspan="5" class="loading">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- DRIFT -->
+    <div id="view-drift" class="view">
+      <div class="page-header">
+        <h1>Drift Monitor</h1>
+        <p>Behavioral drift in production LLM outputs vs. baselines.</p>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          Drift Metrics
+          <button class="refresh-btn" onclick="loadDrift()">↻ Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Suite</th>
+                <th>Test</th>
+                <th>Type</th>
+                <th>Score</th>
+                <th>Threshold</th>
+                <th>Status</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="drift-table-body">
+              <tr><td colspan="7" class="loading">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  const API = '';  // Same-origin — served by FastAPI
+
+  // ── Navigation ──────────────────────────────────────────────────────────
+  function showView(name) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('view-' + name).classList.add('active');
+    event.currentTarget.classList.add('active');
+    // Lazy-load data
+    if (name === 'overview') loadMetrics();
+    if (name === 'runs') loadRuns();
+    if (name === 'failures') loadFailures();
+    if (name === 'drift') loadDrift();
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  function ts(t) {
+    if (!t) return '—';
+    const d = new Date(t * 1000);
+    return d.toLocaleString();
+  }
+  function pct(v) { return (v * 100).toFixed(1) + '%'; }
+  function badge(passed) {
+    return passed
+      ? '<span class="badge badge-pass">PASS</span>'
+      : '<span class="badge badge-fail">FAIL</span>';
+  }
+  function escape(s) {
+    if (!s) return '—';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Overview / Metrics ───────────────────────────────────────────────────
+  async function loadMetrics() {
+    const resp = await fetch(API + '/metrics').catch(() => null);
+    if (!resp || !resp.ok) {
+      document.getElementById('metrics-table-body').innerHTML =
+        '<tr><td colspan="5" class="empty">Unable to reach API. Is the server running?</td></tr>';
+      return;
+    }
+    const data = await resp.json();
+
+    // Stat cards
+    const totalSuites = data.length;
+    const totalRuns = data.reduce((s, m) => s + m.total_runs, 0);
+    const passing = data.filter(m => m.last_run_status === 'pass').length;
+    const avgPass = data.length > 0
+      ? (data.reduce((s, m) => s + m.pass_rate, 0) / data.length * 100).toFixed(1)
+      : '—';
+
+    document.getElementById('stat-grid').innerHTML = `
+      <div class="stat-card"><div class="number blue">${totalSuites}</div><div class="label">Suites</div></div>
+      <div class="stat-card"><div class="number">${totalRuns}</div><div class="label">Total Runs</div></div>
+      <div class="stat-card"><div class="number green">${passing}</div><div class="label">Passing</div></div>
+      <div class="stat-card"><div class="number ${passing===totalSuites?'green':'yellow'}">${avgPass}%</div><div class="label">Avg Pass Rate</div></div>
+    `;
+
+    if (!data.length) {
+      document.getElementById('metrics-table-body').innerHTML =
+        '<tr><td colspan="5" class="empty">No suites found. Run <code>promptbench baseline</code> to get started.</td></tr>';
+      return;
+    }
+
+    document.getElementById('metrics-table-body').innerHTML = data.map(m => `
+      <tr>
+        <td><strong>${escape(m.suite_name)}</strong></td>
+        <td>${m.total_runs}</td>
+        <td>${pct(m.pass_rate)}</td>
+        <td>${badge(m.last_run_status === 'pass')}</td>
+        <td>${ts(m.last_run_timestamp)}</td>
+      </tr>
+    `).join('');
+  }
+
+  // ── Runs ─────────────────────────────────────────────────────────────────
+  async function loadRuns() {
+    const resp = await fetch(API + '/runs?limit=50').catch(() => null);
+    if (!resp || !resp.ok) {
+      document.getElementById('runs-table-body').innerHTML =
+        '<tr><td colspan="8" class="empty">Unable to reach API.</td></tr>';
+      return;
+    }
+    const data = await resp.json();
+    if (!data.length) {
+      document.getElementById('runs-table-body').innerHTML =
+        '<tr><td colspan="8" class="empty">No runs recorded yet.</td></tr>';
+      return;
+    }
+    document.getElementById('runs-table-body').innerHTML = data.map(r => `
+      <tr>
+        <td>${escape(r.suite_name)}</td>
+        <td><code style="font-size:0.75rem;color:var(--muted)">${r.run_id.slice(0,8)}…</code></td>
+        <td class="green">${r.passed}</td>
+        <td class="red">${r.failed}</td>
+        <td>${pct(r.pass_rate)}</td>
+        <td>${r.duration_ms}ms</td>
+        <td>${ts(r.timestamp)}</td>
+        <td>${badge(r.failed === 0)}</td>
+      </tr>
+    `).join('');
+  }
+
+  // ── Failures ─────────────────────────────────────────────────────────────
+  async function loadFailures() {
+    const resp = await fetch(API + '/failures?limit=50').catch(() => null);
+    if (!resp || !resp.ok) {
+      document.getElementById('failures-table-body').innerHTML =
+        '<tr><td colspan="5" class="empty">Unable to reach API.</td></tr>';
+      return;
+    }
+    const data = await resp.json();
+    if (!data.length) {
+      document.getElementById('failures-table-body').innerHTML =
+        '<tr><td colspan="5" class="empty">No failures recorded. 🎉</td></tr>';
+      return;
+    }
+    document.getElementById('failures-table-body').innerHTML = data.map(f => `
+      <tr>
+        <td>${escape(f.suite_name)}</td>
+        <td><strong>${escape(f.test_name)}</strong></td>
+        <td style="max-width:400px;color:var(--yellow)">${escape(f.failure_reason)}</td>
+        <td>${f.duration_ms}ms</td>
+        <td>${ts(f.run_timestamp)}</td>
+      </tr>
+    `).join('');
+  }
+
+  // ── Drift ─────────────────────────────────────────────────────────────────
+  async function loadDrift() {
+    const resp = await fetch(API + '/drift?limit=100').catch(() => null);
+    if (!resp || !resp.ok) {
+      document.getElementById('drift-table-body').innerHTML =
+        '<tr><td colspan="7" class="empty">Unable to reach API.</td></tr>';
+      return;
+    }
+    const data = await resp.json();
+    if (!data.length) {
+      document.getElementById('drift-table-body').innerHTML =
+        '<tr><td colspan="7" class="empty">No drift metrics. Ingest production logs first.</td></tr>';
+      return;
+    }
+    document.getElementById('drift-table-body').innerHTML = data.map(m => {
+      const exceeded = m.exceeded === 1 || m.exceeded === true;
+      const pctScore = Math.min(100, (m.drift_score / m.threshold) * 100).toFixed(0);
+      return `
+        <tr>
+          <td>${escape(m.suite_name)}</td>
+          <td>${escape(m.test_name)}</td>
+          <td>${escape(m.drift_type)}</td>
+          <td>
+            <div class="drift-bar-wrap">
+              <div class="drift-bar ${exceeded ? 'exceeded' : 'ok'}" style="width:${pctScore}%"></div>
+            </div>
+            <span style="margin-left:8px;color:${exceeded?'var(--red)':'var(--green)'}">${m.drift_score.toFixed(4)}</span>
+          </td>
+          <td>${m.threshold}</td>
+          <td>${exceeded
+            ? '<span class="badge badge-drift">DRIFT</span>'
+            : '<span class="badge badge-ok">OK</span>'
+          }</td>
+          <td style="color:var(--muted);max-width:300px">${escape(m.details)}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // ── Initial load ──────────────────────────────────────────────────────────
+  loadMetrics();
+</script>
+</body>
+</html>

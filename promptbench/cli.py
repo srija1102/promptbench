@@ -6,6 +6,8 @@ Commands:
   test      — Run suite against baseline, exit 1 on any failure
   report    — Generate text or HTML report for a suite
   list      — Show all registered suites and their last-run status
+  optimize  — Automatically improve failing prompts using LLM
+  monitor   — Detect behavioral drift in production logs and alert
 """
 
 from __future__ import annotations
@@ -38,6 +40,16 @@ _err_console = Console(stderr=True, style="bold red")
 
 
 # ---------------------------------------------------------------------------
+# Shared verbose callback
+# ---------------------------------------------------------------------------
+
+def _setup_verbose(verbose: bool) -> None:
+    if verbose:
+        from promptbench.utils.logging import setup_logging
+        setup_logging(verbose=True)
+
+
+# ---------------------------------------------------------------------------
 # baseline
 # ---------------------------------------------------------------------------
 
@@ -52,6 +64,7 @@ def baseline(
         readable=True,
         resolve_path=True,
     ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging."),
 ) -> None:
     """
     Run the suite once and save LLM outputs as the golden baseline.
@@ -59,6 +72,7 @@ def baseline(
     Run this command whenever you intentionally update your prompts and want
     to accept the new outputs as the new expected behavior.
     """
+    _setup_verbose(verbose)
     _console.print(f"[bold blue]promptbench baseline[/bold blue] — [dim]{suite}[/dim]")
 
     try:
@@ -81,7 +95,6 @@ def baseline(
         _console.print(f"  [{i}/{len(config.tests)}] Saving baseline for [dim]{test.name}[/dim]...")
         try:
             result_list = runner.run_suite(
-                # Run one test at a time by temporarily replacing the test list
                 _suite_with_single_test(config, test),
                 mode="baseline",
             )
@@ -95,9 +108,7 @@ def baseline(
         f"\n[bold green]✓ Baseline saved[/bold green] — "
         f"{len(results)} test(s) in {total_ms / 1000:.2f}s"
     )
-    _console.print(
-        f"[dim]Stored at ~/.promptbench/db.sqlite[/dim]"
-    )
+    _console.print(f"[dim]Stored at ~/.promptbench/db.sqlite[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +131,7 @@ def test(
         "--no-semantic",
         help="Skip semantic similarity checks (faster, no model download).",
     ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging."),
 ) -> None:
     """
     Run the suite and compare outputs against the stored baseline.
@@ -127,6 +139,7 @@ def test(
     Exits with code 1 if any test fails. Use this in CI pipelines to
     catch prompt regressions automatically.
     """
+    _setup_verbose(verbose)
     _console.print(f"[bold blue]promptbench test[/bold blue] — [dim]{suite}[/dim]")
 
     try:
@@ -196,6 +209,7 @@ def report(
         "--no-semantic",
         help="Skip semantic similarity checks.",
     ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging."),
 ) -> None:
     """
     Run the suite and generate a full report.
@@ -203,6 +217,7 @@ def report(
     For HTML reports, opens a self-contained .html file with side-by-side
     diffs for any failing tests.
     """
+    _setup_verbose(verbose)
     if fmt not in ("text", "html"):
         _err_console.print(f"Unknown format '{fmt}'. Use 'text' or 'html'.")
         raise typer.Exit(code=1)
@@ -246,13 +261,16 @@ def report(
 # ---------------------------------------------------------------------------
 
 @app.command(name="list")
-def list_suites() -> None:
+def list_suites(
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging."),
+) -> None:
     """
     List all registered suites and their last-run status.
 
     Shows suite names, number of tests run, pass/fail counts, and when
     the suite was last executed.
     """
+    _setup_verbose(verbose)
     storage = Storage()
     suite_names = storage.list_suites()
 
@@ -299,6 +317,209 @@ def list_suites() -> None:
         table.add_row(name, last_run, passed_str, failed_str, duration, status)
 
     _console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# optimize
+# ---------------------------------------------------------------------------
+
+@app.command()
+def optimize(
+    suite: Path = typer.Option(
+        ...,
+        "--suite",
+        "-s",
+        help="Path to the YAML test suite file.",
+        exists=True,
+        readable=True,
+        resolve_path=True,
+    ),
+    no_semantic: bool = typer.Option(
+        False,
+        "--no-semantic",
+        help="Skip semantic similarity checks.",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging."),
+) -> None:
+    """
+    Automatically improve failing prompts using LLM-generated variants.
+
+    Runs the suite, identifies failing tests, generates 3 improved prompt
+    variants per failure, re-evaluates each, and prints the best variant.
+    """
+    _setup_verbose(verbose)
+    _console.print(f"[bold blue]promptbench optimize[/bold blue] — [dim]{suite}[/dim]")
+
+    try:
+        config = load_suite(suite)
+    except Exception as exc:
+        _err_console.print(f"Failed to load suite: {exc}")
+        raise typer.Exit(code=1)
+
+    # Run suite to find failures
+    runner = TestRunner()
+    try:
+        results = runner.run_suite(config, mode="test", use_semantic=not no_semantic)
+    except EnvironmentError as exc:
+        _err_console.print(str(exc))
+        raise typer.Exit(code=1)
+    except Exception as exc:
+        _err_console.print(f"Suite run failed: {exc}")
+        raise typer.Exit(code=1)
+
+    failing = [r for r in results if not r.passed]
+    if not failing:
+        _console.print("[bold green]✓ All tests pass — no optimization needed.[/bold green]")
+        return
+
+    _console.print(
+        f"\n[yellow]{len(failing)} failing test(s) found. Running optimizer...[/yellow]\n"
+    )
+
+    # Set up provider and optimizer
+    try:
+        from promptbench.config import get_api_key
+        from promptbench.llm_providers import get_provider
+        from promptbench.optimization.optimizer import PromptOptimizer
+
+        api_key = get_api_key(config.api_provider)
+        provider = get_provider(config.api_provider, api_key)
+        optimizer = PromptOptimizer(provider=provider, model=config.model)
+    except EnvironmentError as exc:
+        _err_console.print(str(exc))
+        raise typer.Exit(code=1)
+    except Exception as exc:
+        _err_console.print(f"Failed to initialize optimizer: {exc}")
+        raise typer.Exit(code=1)
+
+    opt_results = optimizer.optimize_suite(config, failing)
+
+    any_improved = False
+    for opt in opt_results:
+        _console.print(f"[bold]Test:[/bold] {opt.test_name}")
+        _console.print(f"  [dim]Original failure:[/dim] {opt.original_failure}")
+
+        if opt.error:
+            _console.print(f"  [red]Optimization error:[/red] {opt.error}")
+        elif opt.improved:
+            any_improved = True
+            _console.print(f"  [bold green]✓ Improved prompt found:[/bold green]")
+            _console.print(f"  [dim]{opt.best_prompt}[/dim]")
+        else:
+            _console.print(f"  [yellow]No improvement found. Best candidate:[/yellow]")
+            if opt.best_prompt:
+                _console.print(f"  [dim]{opt.best_prompt}[/dim]")
+
+        _console.print()
+
+    if any_improved:
+        _console.print(
+            "[bold green]Optimization complete.[/bold green] "
+            "Update your YAML suite with the improved prompts above."
+        )
+    else:
+        _console.print(
+            "[yellow]Optimization ran but found no improvements. "
+            "Try adjusting your test expectations or using a stronger model.[/yellow]"
+        )
+        raise typer.Exit(code=1)
+
+
+# ---------------------------------------------------------------------------
+# monitor
+# ---------------------------------------------------------------------------
+
+@app.command()
+def monitor(
+    suite_name: str = typer.Argument(
+        ...,
+        help="Name of the suite to monitor (as saved in the database).",
+    ),
+    window: int = typer.Option(
+        50,
+        "--window",
+        "-w",
+        help="Number of recent production logs to analyze per test.",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging."),
+) -> None:
+    """
+    Detect behavioral drift in production LLM logs and fire alerts.
+
+    Analyzes recent production logs ingested via the monitoring API and
+    compares them against stored baselines to detect semantic, tone, and
+    length drift. Exits with code 1 if any drift threshold is exceeded.
+    """
+    _setup_verbose(verbose)
+    _console.print(
+        f"[bold blue]promptbench monitor[/bold blue] — suite: [bold]{suite_name}[/bold]"
+    )
+
+    try:
+        from promptbench.monitoring.drift import DriftDetector
+        from promptbench.monitoring.alerts import AlertManager
+
+        storage = Storage()
+        detector = DriftDetector(storage=storage)
+        report = detector.analyze_suite(suite_name, window=window)
+
+    except Exception as exc:
+        _err_console.print(f"Drift detection failed: {exc}")
+        raise typer.Exit(code=1)
+
+    if not report.metrics:
+        _console.print(
+            "[dim]No production logs found. "
+            "Ingest logs first using the monitoring API or LogIngester.[/dim]"
+        )
+        return
+
+    # Print drift table
+    table = Table(
+        title=f"Drift Report — {suite_name}",
+        box=box.SIMPLE_HEAVY,
+        show_header=True,
+        header_style="bold",
+    )
+    table.add_column("Test", style="bold")
+    table.add_column("Type", style="dim")
+    table.add_column("Score", justify="right")
+    table.add_column("Threshold", justify="right", style="dim")
+    table.add_column("Status")
+
+    for m in report.metrics:
+        if m.exceeded:
+            status = "[bold red]DRIFT[/bold red]"
+            score_str = f"[red]{m.drift_score:.4f}[/red]"
+        else:
+            status = "[bold green]OK[/bold green]"
+            score_str = f"[green]{m.drift_score:.4f}[/green]"
+
+        table.add_row(
+            m.test_name,
+            m.drift_type,
+            score_str,
+            str(m.threshold),
+            status,
+        )
+
+    _console.print(table)
+
+    # Fire alerts
+    manager = AlertManager()
+    alerts = manager.evaluate(report)
+
+    if alerts:
+        _console.print(
+            f"\n[bold red]⚠ {len(alerts)} drift alert(s) triggered.[/bold red]"
+        )
+        for alert in alerts:
+            _console.print(f"  [red]•[/red] {alert.message}")
+        raise typer.Exit(code=1)
+    else:
+        _console.print(
+            f"\n[bold green]✓ No drift detected across {len(report.metrics)} metric(s).[/bold green]"
+        )
 
 
 # ---------------------------------------------------------------------------
