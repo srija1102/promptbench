@@ -4,223 +4,541 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
-You are an expert Python engineer. Build me a complete,
-production-ready open source CLI tool called "promptbench".
+You are a senior staff engineer, open-source maintainer, and startup CTO specializing in AI infrastructure and developer platforms.
 
-## What it does
-promptbench is a prompt regression testing framework for LLMs.
-It lets developers define expected behaviors for their AI prompts
-in YAML files, then automatically tests those prompts against any
-LLM and fails if the outputs regress from a known baseline.
+Your task is to build a production-grade, open-source AI Reliability Platform called:
 
-## Complete file structure to generate:
+Your goal is to build a **complete, production-grade, open-source AI Reliability Platform** called:
+
+# 🚀 PromptBench — Datadog for LLM Behavior
+
+This must be:
+
+* Fully functional
+* Modular and extensible
+* Safe, robust, and bug-resistant
+* Developer-friendly
+* Immediately runnable
+
+You must implement EVERY file completely with NO placeholders.
+
+---
+
+# 🎯 PRODUCT PURPOSE
+
+PromptBench allows developers to:
+
+1. Define expected LLM behavior using YAML
+2. Run prompts against LLMs
+3. Detect regressions vs baseline
+4. Evaluate output quality using rule-based checks + LLM-as-judge
+5. Automatically improve prompts (optimization engine)
+6. Monitor production behavior (drift detection)
+7. Visualize via CLI + dashboard
+
+---
+
+# 📁 PROJECT STRUCTURE (STRICT — DO NOT CHANGE)
 
 promptbench/
 ├── promptbench/
-│   ├── __init__.py
+│   ├── **init**.py
 │   ├── cli.py
 │   ├── runner.py
-│   ├── evaluators/
-│   │   ├── __init__.py
-│   │   ├── format_check.py
-│   │   ├── length_check.py
-│   │   ├── tone_check.py
-│   │   ├── content_check.py
-│   │   └── semantic_check.py
+│   ├── llm_providers.py
+│   ├── config.py
 │   ├── storage.py
 │   ├── reporter.py
-│   └── config.py
-├── tests/
-│   ├── test_runner.py
-│   ├── test_evaluators.py
-│   └── fixtures/sample_suite.yaml
+│   ├── utils/
+│   │   ├── logging.py
+│   │   └── helpers.py
+│   ├── evaluators/
+│   │   ├── format_check.py
+│   │   ├── length_check.py
+│   │   ├── content_check.py
+│   │   ├── tone_check.py
+│   │   ├── semantic_check.py
+│   │   └── llm_judge.py
+│   ├── optimization/
+│   │   └── optimizer.py
+│   ├── monitoring/
+│   │   ├── drift.py
+│   │   ├── ingest.py
+│   │   └── alerts.py
+├── dashboard/
+│   ├── api.py
+│   └── ui/index.html
 ├── examples/
-│   ├── summarizer.yaml
-│   ├── classifier.yaml
-│   └── chatbot.yaml
+├── tests/
 ├── .github/workflows/promptbench.yml
 ├── pyproject.toml
-└── README.md
+├── README.md
+└── LICENSE
 
-## Detailed requirements for each file:
+---
 
-### cli.py
-Use the Typer library. Implement these commands:
-- `promptbench baseline --suite <path>`
-  Runs the suite once and saves outputs as the baseline in SQLite
-- `promptbench test --suite <path>`
-  Runs the suite and compares against baseline, exits with code 1
-  if any test fails
-- `promptbench report --suite <path> --format [text|html]`
-  Generates a full test report
-- `promptbench list`
-  Lists all registered suites and their last run status
+# 🧩 FILE-BY-FILE DETAILED REQUIREMENTS
 
-### runner.py
-- Load a YAML test suite file
-- For each test in the suite, call the LLM (Groq API with
-  llama3-8b-8192 model by default)
-- Pass the result through all relevant evaluators
-- Return a structured TestResult object with: test name,
-  passed/failed, actual output, expected output, duration ms,
-  failure reason if any
+---
 
-### evaluators/format_check.py
-Check if output matches expected format:
-- "bullet_points": output contains lines starting with -, *, or •
-- "json": output is valid parseable JSON
-- "numbered_list": output contains lines starting with 1. 2. 3.
-- "markdown": output contains markdown syntax
-- "plain_text": output has no special formatting
+# 1. cli.py (ENTRYPOINT)
 
-### evaluators/length_check.py
-Check output length constraints:
-- max_words: word count must not exceed this
-- min_words: word count must be at least this
-- max_bullets: number of bullet points must not exceed this
-- min_bullets: number of bullet points must be at least this
-- max_sentences: sentence count must not exceed this
+Purpose:
 
-### evaluators/content_check.py
-Check content requirements:
-- required_phrases: list of strings that MUST appear in output
-- forbidden_phrases: list of strings that must NOT appear in output
-- forbidden_patterns: list of regex patterns that must NOT match
-- required_patterns: list of regex patterns that MUST match
+* User interface for entire system
 
-### evaluators/semantic_check.py
-Check semantic similarity against baseline:
-- Use sentence-transformers with "all-MiniLM-L6-v2" model (free,
-  runs locally)
-- Compute cosine similarity between current output and baseline
-  output
-- Fail if similarity drops below threshold (default 0.75)
-- This catches cases where meaning has drifted even if format
-  is correct
+Must:
 
-### evaluators/tone_check.py
-Simple tone/sentiment check:
-- Use a basic rule-based approach (no external API needed)
-- Detect if tone shifted from professional to casual
-- Check for: excessive hedging ("I think", "maybe", "possibly"),
-  refusal patterns ("I cannot", "I'm unable", "As an AI"),
-  overly casual language ("hey", "yeah", "gonna")
-- Flag these as tone violations if they appear when baseline
-  had none
+* Use Typer
+* Define commands:
 
-### storage.py
-Use SQLite (stdlib, no dependencies):
-- Table: baselines (suite_name, test_name, output, timestamp,
-  model, prompt_hash)
-- Table: runs (suite_name, run_id, timestamp, passed, failed,
-  duration_ms)
-- Table: results (run_id, test_name, passed, actual_output,
-  failure_reason, duration_ms)
-- Methods: save_baseline(), get_baseline(), save_run(),
-  get_run_history()
-- Database file stored at ~/.promptbench/db.sqlite
+  * baseline
+  * test
+  * report
+  * list
+  * optimize
+  * monitor
 
-### reporter.py
-Generate test reports:
-- Text report: colored terminal output using Rich library
-  - Green checkmark for pass, red X for fail
-  - Show test name, duration, failure reason
-  - Summary line: "X passed, Y failed in Z seconds"
-- HTML report: self-contained HTML file with:
-  - Summary stats at top
-  - Table of all tests with status
-  - For failures: side-by-side diff of expected vs actual
+Each command must:
 
-### config.py
-- Load YAML test suite files
-- Validate required fields (name, model, tests)
-- Resolve environment variables (GROQ_API_KEY, OPENAI_API_KEY)
-- Support both single suite file and directory of suite files
+* Validate inputs
+* Call appropriate modules (runner, storage, reporter, optimizer, monitoring)
+* Handle exceptions cleanly
+* Exit with:
 
-### YAML test suite format
-Each suite file must support:
-```yaml
-name: string
-model: string (e.g. "llama3-8b-8192")
-api_provider: string ("groq" | "openai" | "anthropic")
-prompt_file: string (path to .txt file with the prompt template)
-  OR
-prompt: string (inline prompt text)
-baseline_model: string (optional, model used for baseline)
+  * 0 = success
+  * 1 = failure
 
-tests:
-  - name: string
-    input: string (prompt with {variable} placeholders)
-    variables: dict (values for placeholders)
-    expect:
-      format: string (optional)
-      max_words: int (optional)
-      min_words: int (optional)
-      max_bullets: int (optional)
-      min_bullets: int (optional)
-      required_phrases: list[string] (optional)
-      forbidden_phrases: list[string] (optional)
-      forbidden_patterns: list[string] regex (optional)
-      semantic_threshold: float 0-1 (optional, default 0.75)
-      tone: string ("professional"|"casual"|"neutral") (optional)
-```
+Include:
 
-### pyproject.toml
-- Package name: promptbench
-- Version: 0.1.0
-- Python >=3.9
-- Dependencies: typer, pyyaml, requests, sentence-transformers,
-  rich, sqlite3 (stdlib)
-- Entry point: promptbench = "promptbench.cli:app"
-- Include all necessary metadata for PyPI publishing
+* --verbose flag (enables DEBUG logging)
 
-### README.md
-Write a compelling README with:
-1. One-line description
-2. "The problem" section — 3 sentences on why prompt regression
-   is painful
-3. Quick install: pip install promptbench
-4. 5-minute quickstart with real code example
-5. Full YAML syntax reference
-6. GitHub Actions integration example
-7. "How it works" — brief technical explanation
-8. Contributing guide
-9. MIT license badge
+---
 
-### examples/summarizer.yaml
-A complete, realistic example test suite for an article
-summarizer prompt with 5 tests covering: format, length,
-content requirements, forbidden phrases, and semantic threshold.
+# 2. config.py
 
-### examples/classifier.yaml
-A complete, realistic example for a sentiment classifier
-prompt with 4 tests.
+Purpose:
 
-### tests/test_runner.py and test_evaluators.py
-Write proper pytest tests with at least 3 tests per evaluator
-using mocked LLM responses. Aim for 80% coverage.
+* Load and validate YAML test suite files
 
-### .github/workflows/promptbench.yml
-Complete GitHub Actions workflow that:
-- Triggers on push and pull_request
-- Tests against Python 3.9, 3.10, 3.11
-- Runs pytest
-- Runs promptbench test on the example suites
+Functions:
 
-## Coding standards:
-- Type hints everywhere
-- Docstrings on all public methods
-- Error messages must be human-readable and actionable
-- Never crash silently — always show what went wrong and how
-  to fix it
-- All API keys loaded from environment variables only, never
-  hardcoded
-- Exit code 0 = all tests passed, exit code 1 = any test failed
-  (this is what makes GitHub Actions work)
+* load_config(path: str) -> List[SuiteConfig]
+* validate_config(data: dict) -> None
 
-## Generate every file completely — no placeholders, no "add
-your code here" comments. Every file must be immediately
-runnable. Start with cli.py, then runner.py, then each
-evaluator, then storage.py, reporter.py, config.py, then
-the YAML examples, then pyproject.toml, then README.md,
-then the test files.
+Must:
+
+* Support file OR directory input
+* Validate required fields:
+
+  * name
+  * model
+  * tests
+* Validate:
+
+  * regex patterns
+  * numeric ranges (0–1)
+* Resolve environment variables safely
+* Provide clear error messages
+
+---
+
+# 3. llm_providers.py
+
+Purpose:
+
+* Abstract all LLM calls
+
+Classes:
+
+* LLMProvider (base class)
+* GroqProvider
+* OpenAIProvider
+* AnthropicProvider
+
+Methods:
+
+* generate(prompt: str, model: str) -> str
+
+Must include:
+
+* retry logic (max 3, exponential backoff)
+* timeout handling
+* API key validation
+* cost estimation (tokens approximation)
+* consistent interface
+
+---
+
+# 4. runner.py (CORE ENGINE)
+
+Purpose:
+
+* Execute tests end-to-end
+
+Functions:
+
+* run_suite(config: SuiteConfig) -> List[TestResult]
+* run_test(test_config) -> TestResult
+
+Must:
+
+* Resolve variables in prompts
+* Call LLM provider
+* Run ALL evaluators
+* Support concurrency (ThreadPoolExecutor)
+* Track:
+
+  * execution time
+  * cost
+* Catch errors per test (no full crash)
+
+Return:
+TestResult dataclass with:
+
+* name
+* passed
+* actual_output
+* baseline_output
+* duration_ms
+* failure_reason
+* cost
+* llm_score
+
+---
+
+# 5. evaluators/
+
+Each file implements ONE evaluator.
+
+All evaluators must:
+
+* follow common interface
+* return EvaluationResult
+
+---
+
+## format_check.py
+
+Check:
+
+* bullet_points
+* json
+* numbered_list
+* markdown
+* plain_text
+
+---
+
+## length_check.py
+
+Check:
+
+* word count
+* bullet count
+* sentence count
+
+---
+
+## content_check.py
+
+Check:
+
+* required_phrases
+* forbidden_phrases
+* regex patterns
+
+---
+
+## tone_check.py
+
+Detect:
+
+* hedging
+* refusal
+* casual tone
+
+Compare with baseline
+
+---
+
+## semantic_check.py
+
+* Use sentence-transformers
+* Compute cosine similarity
+* Cache embeddings
+* Fail below threshold
+
+---
+
+## llm_judge.py (CRITICAL)
+
+Purpose:
+
+* Use LLM to evaluate output quality
+
+Steps:
+
+1. Construct evaluation prompt
+2. Call LLM provider
+3. Parse JSON response safely
+4. Extract:
+
+   * score (1–5)
+   * reason
+
+Rules:
+
+* If parsing fails:
+
+  * retry once
+  * else fail safely
+
+---
+
+# 6. storage.py
+
+Purpose:
+
+* Persist data
+
+Functions:
+
+* init_db()
+* save_baseline()
+* get_baseline()
+* save_run()
+* get_run_history()
+
+Tables:
+
+* baselines
+* runs
+* results
+* production_logs
+* drift_metrics
+
+Must:
+
+* auto-create DB
+* handle DB errors safely
+
+---
+
+# 7. reporter.py
+
+Purpose:
+
+* Display results
+
+Functions:
+
+* generate_text_report(results)
+* generate_html_report(results)
+
+TEXT:
+
+* Rich formatting
+* PASS/FAIL colors
+
+HTML:
+
+* summary stats
+* results table
+* diff view
+
+---
+
+# 8. optimization/optimizer.py
+
+Purpose:
+
+* Improve prompts automatically
+
+Steps:
+
+1. Take failing prompt
+2. Generate 3 improved prompts using LLM
+3. Re-run evaluation
+4. Select best
+
+Must:
+
+* return structured output
+* handle failures safely
+
+---
+
+# 9. monitoring/
+
+## drift.py
+
+* compute embeddings
+* detect:
+
+  * semantic drift
+  * tone drift
+  * length drift
+
+## ingest.py
+
+* store production logs
+
+## alerts.py
+
+* trigger alerts when drift exceeds threshold
+
+---
+
+# 10. dashboard/api.py
+
+Purpose:
+
+* Provide REST API
+
+Endpoints:
+
+* /runs
+* /metrics
+* /failures
+* /drift
+* /optimize
+
+Use FastAPI
+
+---
+
+# 11. dashboard/ui/index.html
+
+Purpose:
+
+* Simple frontend
+
+Display:
+
+* metrics
+* failures
+* drift alerts
+
+---
+
+# 🔒 SAFETY & QUALITY RULES
+
+---
+
+## ERROR HANDLING
+
+Handle:
+
+* API failures
+* invalid YAML
+* evaluator crashes
+* DB issues
+
+Never crash entire system
+
+---
+
+## VALIDATION
+
+* strict schema validation
+* regex validation
+* numeric validation
+
+---
+
+## LOGGING
+
+* INFO: normal flow
+* ERROR: failures
+* DEBUG: verbose
+
+---
+
+## CONCURRENCY
+
+* thread-safe execution
+* no shared mutable state
+
+---
+
+## NO SILENT FAILURES
+
+* always report errors clearly
+
+---
+
+## USER-FRIENDLY ERRORS
+
+Example:
+"Invalid YAML: missing 'tests' field"
+
+---
+
+# 🧪 TESTING REQUIREMENTS
+
+* pytest
+* mock all LLM calls
+* test:
+
+  * each evaluator
+  * runner
+  * llm_judge parsing
+  * optimizer
+  * drift detection
+
+---
+
+# ⚙️ GITHUB ACTIONS
+
+* run pytest
+* run promptbench test
+* fail on regression
+
+---
+
+# 📘 README.md
+
+Must include:
+
+* strong hook
+* problem explanation
+* quickstart
+* examples
+* screenshots (describe)
+
+---
+
+# 🧠 FINAL EXECUTION ORDER
+
+Generate in this order:
+
+1. cli.py
+2. config.py
+3. llm_providers.py
+4. evaluators
+5. runner.py
+6. storage.py
+7. reporter.py
+8. optimization
+9. monitoring
+10. dashboard
+11. examples
+12. tests
+13. GitHub Actions
+14. README
+
+---
+
+# FINAL REQUIREMENT
+
+The system must:
+
+* install via pip install -e .
+* run without crashing
+* handle invalid inputs safely
+* be usable immediately
+
+---
+
+Now build PromptBench completely.

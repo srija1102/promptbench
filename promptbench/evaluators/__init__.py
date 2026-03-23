@@ -10,6 +10,7 @@ from promptbench.evaluators.length_check import LengthChecker
 from promptbench.evaluators.content_check import ContentChecker
 from promptbench.evaluators.tone_check import ToneChecker
 from promptbench.evaluators.semantic_check import SemanticChecker
+from promptbench.evaluators.llm_judge import LLMJudge, LLMJudgeResult
 
 __all__ = [
     "FormatChecker",
@@ -17,4 +18,6 @@ __all__ = [
     "ContentChecker",
     "ToneChecker",
     "SemanticChecker",
+    "LLMJudge",
+    "LLMJudgeResult",
 ]
